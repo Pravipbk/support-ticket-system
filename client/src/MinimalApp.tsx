@@ -372,6 +372,10 @@ function MinimalDashboard() {
   );
 }
 
+// Import new pages
+import TicketsPage from './pages/TicketsPage';
+import TicketDetailPage from './pages/TicketDetailPage';
+
 // App component with route redirects
 function MinimalApp() {
   const [location, setLocation] = useLocation();
@@ -405,6 +409,13 @@ function MinimalApp() {
         <Route path="/login" component={MinimalLogin} />
         <Route path="/" component={MinimalDashboard} />
         <Route path="/dashboard" component={MinimalDashboard} />
+        <Route path="/tickets" component={TicketsPage} />
+        <Route 
+          path="/tickets/:id"
+          component={(params: { id: string }) => (
+            <TicketDetailPage id={params.id} />
+          )}
+        />
       </Switch>
       <Toaster />
     </>
