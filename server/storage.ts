@@ -3,7 +3,9 @@ import {
   tickets, Ticket, InsertTicket, 
   comments, Comment, InsertComment,
   activities, Activity, InsertActivity,
-  type TicketWithRelations
+  articles, Article, InsertArticle,
+  articleFeedback, ArticleFeedback, InsertArticleFeedback,
+  type TicketWithRelations, type ArticleWithRelations
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, like, desc, and, gte, sql } from "drizzle-orm";
@@ -39,6 +41,25 @@ export interface IStorage {
   getActivitiesByTicket(ticketId: number): Promise<Activity[]>;
   getRecentActivities(limit: number): Promise<Activity[]>;
 
+  // Knowledge Base methods
+  createArticle(article: InsertArticle): Promise<Article>;
+  getArticle(id: number): Promise<Article | undefined>;
+  getArticleWithRelations(id: number): Promise<ArticleWithRelations | undefined>;
+  updateArticle(id: number, data: Partial<Article>): Promise<Article | undefined>;
+  getAllArticles(): Promise<Article[]>;
+  getArticlesByStatus(status: string): Promise<Article[]>;
+  getArticlesByCategory(category: string): Promise<Article[]>;
+  getArticlesByAuthor(authorId: number): Promise<Article[]>;
+  getArticlesWithPagination(page: number, limit: number): Promise<{ articles: Article[], total: number }>;
+  searchArticles(query: string): Promise<Article[]>;
+  incrementArticleViewCount(id: number): Promise<void>;
+  publishArticle(id: number): Promise<Article | undefined>;
+  
+  // Article Feedback methods
+  createArticleFeedback(feedback: InsertArticleFeedback): Promise<ArticleFeedback>;
+  getArticleFeedbackByArticle(articleId: number): Promise<ArticleFeedback[]>;
+  getArticleFeedbackStats(articleId: number): Promise<{ helpful: number, unhelpful: number }>;
+
   // Statistics
   getTicketStats(): Promise<{
     total: number;
@@ -57,20 +78,28 @@ export class MemStorage implements IStorage {
   private tickets: Map<number, Ticket>;
   private comments: Map<number, Comment>;
   private activities: Map<number, Activity>;
+  private articles: Map<number, Article>;
+  private articleFeedbacks: Map<number, ArticleFeedback>;
   private currentUserId: number;
   private currentTicketId: number;
   private currentCommentId: number;
   private currentActivityId: number;
+  private currentArticleId: number;
+  private currentArticleFeedbackId: number;
 
   constructor() {
     this.users = new Map();
     this.tickets = new Map();
     this.comments = new Map();
     this.activities = new Map();
+    this.articles = new Map();
+    this.articleFeedbacks = new Map();
     this.currentUserId = 1;
     this.currentTicketId = 1;
     this.currentCommentId = 1;
     this.currentActivityId = 1;
+    this.currentArticleId = 1;
+    this.currentArticleFeedbackId = 1;
 
     // Seed some initial data
     this.seedData();
@@ -460,6 +489,139 @@ export class MemStorage implements IStorage {
       .slice(0, limit);
   }
 
+  // Knowledge Base methods
+  async createArticle(article: InsertArticle): Promise<Article> {
+    const id = this.currentArticleId++;
+    const timestamp = new Date();
+    const newArticle: Article = {
+      ...article,
+      id,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      publishedAt: null,
+      viewCount: 0
+    };
+    this.articles.set(id, newArticle);
+    return newArticle;
+  }
+
+  async getArticle(id: number): Promise<Article | undefined> {
+    return this.articles.get(id);
+  }
+
+  async getArticleWithRelations(id: number): Promise<ArticleWithRelations | undefined> {
+    const article = this.articles.get(id);
+    if (!article) return undefined;
+
+    const author = this.users.get(article.authorId);
+    if (!author) return undefined;
+
+    const feedback = await this.getArticleFeedbackByArticle(id);
+
+    return {
+      ...article,
+      author,
+      feedback
+    };
+  }
+
+  async updateArticle(id: number, data: Partial<Article>): Promise<Article | undefined> {
+    const article = this.articles.get(id);
+    if (!article) return undefined;
+
+    const updatedArticle = {
+      ...article,
+      ...data,
+      updatedAt: new Date()
+    };
+    this.articles.set(id, updatedArticle);
+    return updatedArticle;
+  }
+
+  async getAllArticles(): Promise<Article[]> {
+    return Array.from(this.articles.values());
+  }
+
+  async getArticlesByStatus(status: string): Promise<Article[]> {
+    return Array.from(this.articles.values()).filter(article => article.status === status);
+  }
+
+  async getArticlesByCategory(category: string): Promise<Article[]> {
+    return Array.from(this.articles.values()).filter(article => article.category === category);
+  }
+
+  async getArticlesByAuthor(authorId: number): Promise<Article[]> {
+    return Array.from(this.articles.values()).filter(article => article.authorId === authorId);
+  }
+
+  async getArticlesWithPagination(page: number, limit: number): Promise<{ articles: Article[], total: number }> {
+    const allArticles = Array.from(this.articles.values());
+    const total = allArticles.length;
+    const startIdx = (page - 1) * limit;
+    const endIdx = page * limit;
+    const articles = allArticles
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(startIdx, endIdx);
+    return { articles, total };
+  }
+
+  async searchArticles(query: string): Promise<Article[]> {
+    const lowerQuery = query.toLowerCase();
+    return Array.from(this.articles.values()).filter(article => 
+      article.title.toLowerCase().includes(lowerQuery) || 
+      article.content.toLowerCase().includes(lowerQuery) ||
+      article.category.toLowerCase().includes(lowerQuery)
+    );
+  }
+
+  async incrementArticleViewCount(id: number): Promise<void> {
+    const article = this.articles.get(id);
+    if (article) {
+      article.viewCount += 1;
+      this.articles.set(id, article);
+    }
+  }
+
+  async publishArticle(id: number): Promise<Article | undefined> {
+    const article = this.articles.get(id);
+    if (!article) return undefined;
+
+    const publishedArticle = {
+      ...article,
+      status: "published" as const,
+      publishedAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.articles.set(id, publishedArticle);
+    return publishedArticle;
+  }
+
+  // Article Feedback methods
+  async createArticleFeedback(feedback: InsertArticleFeedback): Promise<ArticleFeedback> {
+    const id = this.currentArticleFeedbackId++;
+    const timestamp = new Date();
+    const newFeedback: ArticleFeedback = {
+      ...feedback,
+      id,
+      createdAt: timestamp
+    };
+    this.articleFeedbacks.set(id, newFeedback);
+    return newFeedback;
+  }
+
+  async getArticleFeedbackByArticle(articleId: number): Promise<ArticleFeedback[]> {
+    return Array.from(this.articleFeedbacks.values())
+      .filter(feedback => feedback.articleId === articleId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+
+  async getArticleFeedbackStats(articleId: number): Promise<{ helpful: number, unhelpful: number }> {
+    const feedback = await this.getArticleFeedbackByArticle(articleId);
+    const helpful = feedback.filter(f => f.helpful).length;
+    const unhelpful = feedback.filter(f => !f.helpful).length;
+    return { helpful, unhelpful };
+  }
+
   // Statistics
   async getTicketStats(): Promise<{
     total: number;
@@ -650,6 +812,155 @@ export class DatabaseStorage implements IStorage {
       .from(activities)
       .orderBy(desc(activities.createdAt))
       .limit(limit);
+  }
+
+  // Knowledge Base methods
+  async createArticle(article: InsertArticle): Promise<Article> {
+    const [newArticle] = await db.insert(articles).values(article).returning();
+    return newArticle;
+  }
+
+  async getArticle(id: number): Promise<Article | undefined> {
+    const [article] = await db.select().from(articles).where(eq(articles.id, id));
+    return article || undefined;
+  }
+
+  async getArticleWithRelations(id: number): Promise<ArticleWithRelations | undefined> {
+    const [article] = await db.select().from(articles).where(eq(articles.id, id));
+    if (!article) return undefined;
+
+    const [author] = await db.select().from(users).where(eq(users.id, article.authorId));
+    if (!author) return undefined;
+
+    const feedbackItems = await this.getArticleFeedbackByArticle(id);
+
+    return {
+      ...article,
+      author,
+      feedback: feedbackItems
+    };
+  }
+
+  async updateArticle(id: number, data: Partial<Article>): Promise<Article | undefined> {
+    const [updatedArticle] = await db.update(articles)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(articles.id, id))
+      .returning();
+    return updatedArticle || undefined;
+  }
+
+  async getAllArticles(): Promise<Article[]> {
+    return await db.select().from(articles);
+  }
+
+  async getArticlesByStatus(status: string): Promise<Article[]> {
+    return await db.select().from(articles).where(sql`${articles.status}::text = ${status}`);
+  }
+
+  async getArticlesByCategory(category: string): Promise<Article[]> {
+    return await db.select().from(articles).where(sql`${articles.category}::text = ${category}`);
+  }
+
+  async getArticlesByAuthor(authorId: number): Promise<Article[]> {
+    return await db.select().from(articles).where(eq(articles.authorId, authorId));
+  }
+
+  async getArticlesWithPagination(page: number, limit: number): Promise<{ articles: Article[], total: number }> {
+    const offset = (page - 1) * limit;
+    
+    // Retrieve paginated articles
+    const articleList = await db.select()
+      .from(articles)
+      .orderBy(desc(articles.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    // Count total articles
+    const totalResult = await db.select({ 
+      count: sql`count(*)` 
+    }).from(articles);
+    const total = totalResult[0] ? Number(totalResult[0].count) : 0;
+
+    return { 
+      articles: articleList,
+      total
+    };
+  }
+
+  async searchArticles(query: string): Promise<Article[]> {
+    const searchPattern = `%${query}%`;
+    return await db.select()
+      .from(articles)
+      .where(
+        like(articles.title, searchPattern) ||
+        like(articles.content, searchPattern) ||
+        like(articles.category, searchPattern)
+      );
+  }
+
+  async incrementArticleViewCount(id: number): Promise<void> {
+    await db.update(articles)
+      .set({ 
+        viewCount: sql`${articles.viewCount} + 1` 
+      })
+      .where(eq(articles.id, id));
+  }
+
+  async publishArticle(id: number): Promise<Article | undefined> {
+    const timestamp = new Date();
+    const [publishedArticle] = await db.update(articles)
+      .set({ 
+        status: "published",
+        publishedAt: timestamp,
+        updatedAt: timestamp
+      })
+      .where(eq(articles.id, id))
+      .returning();
+    return publishedArticle || undefined;
+  }
+
+  // Article Feedback methods
+  async createArticleFeedback(feedback: InsertArticleFeedback): Promise<ArticleFeedback> {
+    const [newFeedback] = await db.insert(articleFeedback).values(feedback).returning();
+    return newFeedback;
+  }
+
+  async getArticleFeedbackByArticle(articleId: number): Promise<ArticleFeedback[]> {
+    return await db.select()
+      .from(articleFeedback)
+      .where(eq(articleFeedback.articleId, articleId))
+      .orderBy(desc(articleFeedback.createdAt));
+  }
+
+  async getArticleFeedbackStats(articleId: number): Promise<{ helpful: number, unhelpful: number }> {
+    // Get helpful feedback count
+    const [helpfulResult] = await db.select({
+      count: sql`count(*)`
+    })
+    .from(articleFeedback)
+    .where(
+      and(
+        eq(articleFeedback.articleId, articleId),
+        eq(articleFeedback.helpful, true)
+      )
+    );
+    
+    // Get unhelpful feedback count
+    const [unhelpfulResult] = await db.select({
+      count: sql`count(*)`
+    })
+    .from(articleFeedback)
+    .where(
+      and(
+        eq(articleFeedback.articleId, articleId),
+        eq(articleFeedback.helpful, false)
+      )
+    );
+
+    return {
+      helpful: Number(helpfulResult.count) || 0,
+      unhelpful: Number(unhelpfulResult.count) || 0
+    };
   }
 
   // Statistics
