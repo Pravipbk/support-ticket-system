@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Switch, Route, useLocation } from 'wouter';
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 // Functional Login component
 function MinimalLogin() {
@@ -118,6 +118,71 @@ function MinimalLogin() {
 function MinimalDashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [user, setUser] = React.useState<any>(null);
+
+  // Get user profile
+  React.useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const response = await fetch('/api/auth/session', {
+          credentials: 'include',
+        });
+        if (response.ok) {
+          const userData = await response.json();
+          setUser(userData);
+        }
+      } catch (error) {
+        console.error('Failed to fetch user profile:', error);
+      }
+    };
+    
+    fetchUser();
+  }, []);
+  
+  // Fetch ticket stats using query
+  const { data: stats, isLoading: isLoadingStats } = useQuery({
+    queryKey: ['/api/stats'],
+    queryFn: async () => {
+      const response = await fetch('/api/stats', {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch stats');
+      }
+      
+      return response.json();
+    },
+  });
+  
+  // Define activity type
+  interface Activity {
+    id: number;
+    type: string;
+    message: string;
+    createdAt: string;
+    ticketId: number | null;
+    userId: number;
+    user?: {
+      name: string;
+    };
+  }
+
+  // Fetch recent activities using query
+  const { data: activities, isLoading: isLoadingActivities } = useQuery<Activity[]>({
+    queryKey: ['/api/activities'],
+    queryFn: async () => {
+      const response = await fetch('/api/activities?limit=5', {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch activities');
+      }
+      
+      return response.json();
+    },
+  });
   
   const handleLogout = async () => {
     try {
@@ -138,38 +203,171 @@ function MinimalDashboard() {
     }
   };
 
+  const handleViewAllTickets = () => {
+    setLocation('/tickets');
+  };
+
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-slate-800">Dashboard</h1>
-        <button 
-          onClick={handleLogout}
-          className="px-4 py-2 text-white bg-red-600 rounded-md hover:bg-red-700"
-        >
-          Logout
-        </button>
-      </div>
-      
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-xl font-semibold mb-4">Welcome to SupportDesk</h2>
-        <p className="text-slate-600 mb-4">
-          This is a minimal dashboard page. You have successfully logged in!
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-          <div className="bg-blue-50 p-4 rounded-md border border-blue-200">
-            <h3 className="font-medium text-blue-800">Tickets</h3>
-            <p className="text-2xl font-bold">12</p>
-          </div>
-          <div className="bg-green-50 p-4 rounded-md border border-green-200">
-            <h3 className="font-medium text-green-800">Resolved</h3>
-            <p className="text-2xl font-bold">8</p>
-          </div>
-          <div className="bg-yellow-50 p-4 rounded-md border border-yellow-200">
-            <h3 className="font-medium text-yellow-800">Pending</h3>
-            <p className="text-2xl font-bold">4</p>
+    <div className="min-h-screen bg-slate-50 pb-12">
+      {/* Header */}
+      <header className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-bold text-gray-900">SupportDesk</h1>
+            
+            {user && (
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className="font-medium">{user.name}</p>
+                  <p className="text-sm text-gray-500 capitalize">{user.role}</p>
+                </div>
+                <button 
+                  onClick={handleLogout}
+                  className="px-3 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      </header>
+      
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold mb-4 text-gray-800">Dashboard Overview</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Total Tickets</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">
+                    {isLoadingStats ? '...' : stats?.total || 0}
+                  </p>
+                </div>
+                <div className="p-2 bg-blue-50 rounded-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Open Tickets</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">
+                    {isLoadingStats ? '...' : stats?.openCount || 0}
+                  </p>
+                </div>
+                <div className="p-2 bg-yellow-50 rounded-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">In Progress</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">
+                    {isLoadingStats ? '...' : stats?.inProgressCount || 0}
+                  </p>
+                </div>
+                <div className="p-2 bg-indigo-50 rounded-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Resolved</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">
+                    {isLoadingStats ? '...' : stats?.resolvedCount || 0}
+                  </p>
+                </div>
+                <div className="p-2 bg-green-50 rounded-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-medium text-gray-800">Recent Tickets</h3>
+              <button 
+                onClick={handleViewAllTickets}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                View All
+              </button>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead>
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {isLoadingStats ? (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-4 text-center text-sm text-gray-500">Loading tickets...</td>
+                    </tr>
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-4 text-center text-sm text-gray-500">No tickets available</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+            <h3 className="font-medium text-gray-800 mb-4">Recent Activity</h3>
+            {isLoadingActivities ? (
+              <p className="text-center text-gray-500 py-4">Loading activities...</p>
+            ) : !activities || activities.length === 0 ? (
+              <p className="text-center text-gray-500 py-4">No recent activities</p>
+            ) : (
+              <div className="space-y-4">
+                {activities.map((activity: Activity, index: number) => (
+                  <div key={activity.id || index} className="flex items-start gap-3">
+                    <div className="p-2 rounded-full bg-blue-50">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">{activity.message}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {activity.user?.name || 'User'} • {new Date(activity.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
