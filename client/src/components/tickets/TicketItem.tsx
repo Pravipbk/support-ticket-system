@@ -90,7 +90,7 @@ export default function TicketItem({ ticket }: TicketItemProps) {
               <div className="sm:flex">
                 <p className="flex items-center text-sm text-slate-500">
                   <User className="flex-shrink-0 mr-1.5 h-5 w-5 text-slate-400" />
-                  {ticket.createdBy.name}
+                  {ticket.createdBy ? ticket.createdBy.name : 'Unknown User'}
                 </p>
                 <p className="mt-2 flex items-center text-sm text-slate-500 sm:mt-0 sm:ml-6">
                   <Mail className="flex-shrink-0 mr-1.5 h-5 w-5 text-slate-400" />
