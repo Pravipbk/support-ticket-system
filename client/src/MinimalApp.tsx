@@ -155,7 +155,7 @@ function MinimalDashboard() {
     },
   });
   
-  // Define activity type
+  // Define types
   interface Activity {
     id: number;
     type: string;
@@ -167,6 +167,31 @@ function MinimalDashboard() {
       name: string;
     };
   }
+
+  interface Ticket {
+    id: number;
+    subject: string;
+    status: string;
+    priority: string;
+    createdAt: string;
+    category: string;
+  }
+
+  // Fetch recent tickets using query
+  const { data: ticketsData, isLoading: isLoadingTickets } = useQuery<{tickets: Ticket[], total: number}>({
+    queryKey: ['/api/tickets'],
+    queryFn: async () => {
+      const response = await fetch('/api/tickets?limit=5', {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch tickets');
+      }
+      
+      return response.json();
+    },
+  });
 
   // Fetch recent activities using query
   const { data: activities, isLoading: isLoadingActivities } = useQuery<Activity[]>({
@@ -335,14 +360,46 @@ function MinimalDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {isLoadingStats ? (
+                  {isLoadingTickets ? (
                     <tr>
                       <td colSpan={3} className="px-4 py-4 text-center text-sm text-gray-500">Loading tickets...</td>
                     </tr>
-                  ) : (
+                  ) : !ticketsData || ticketsData.tickets.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="px-4 py-4 text-center text-sm text-gray-500">No tickets available</td>
                     </tr>
+                  ) : (
+                    ticketsData.tickets.map((ticket) => (
+                      <tr 
+                        key={ticket.id} 
+                        className="cursor-pointer hover:bg-gray-50"
+                        onClick={() => setLocation(`/tickets/${ticket.id}`)}
+                      >
+                        <td className="px-4 py-4">
+                          <div className="font-medium text-gray-900">{ticket.subject}</div>
+                          <div className="text-xs text-gray-500 mt-1">{new Date(ticket.createdAt).toLocaleDateString()}</div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            ticket.status === 'open' ? 'bg-yellow-100 text-yellow-800' :
+                            ticket.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                            ticket.status === 'resolved' ? 'bg-green-100 text-green-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {ticket.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            ticket.priority === 'high' ? 'bg-red-100 text-red-800' :
+                            ticket.priority === 'medium' ? 'bg-orange-100 text-orange-800' :
+                            'bg-green-100 text-green-800'
+                          }`}>
+                            {ticket.priority}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
