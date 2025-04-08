@@ -24,8 +24,9 @@ function MinimalLogin() {
       });
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Login failed');
+        const errorData = await response.json();
+        console.error("Login error:", errorData);
+        throw new Error(errorData.message || 'Login failed');
       }
       
       return response.json();
@@ -38,6 +39,7 @@ function MinimalLogin() {
       setLocation('/dashboard');
     },
     onError: (error: Error) => {
+      console.error("Login error:", error);
       toast({
         title: "Login Failed",
         description: error.message || "Invalid username or password",
@@ -100,10 +102,11 @@ function MinimalLogin() {
           </div>
           
           <div className="mt-4 text-sm text-center text-slate-600">
-            <p>Test Credentials:</p>
+            <p className="font-semibold mb-1">Test Credentials:</p>
             <p className="font-medium">Admin: admin / admin123</p>
             <p className="font-medium">Agent: agent / agent123</p>
-            <p className="font-medium">Customer: customer / customer123</p>
+            <p className="font-medium">Customers:</p>
+            <p className="text-xs mb-1">sarah, john, emily, robert / customer123</p>
           </div>
         </form>
       </div>
