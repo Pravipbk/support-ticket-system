@@ -5,6 +5,8 @@ import {
   activities, Activity, InsertActivity,
   type TicketWithRelations
 } from "@shared/schema";
+import { db } from "./db";
+import { eq, like, desc, and, gte, sql } from "drizzle-orm";
 
 // Storage interface
 export interface IStorage {
@@ -496,4 +498,227 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Database storage implementation
+export class DatabaseStorage implements IStorage {
+  // User methods
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const [newUser] = await db.insert(users).values(user).returning();
+    return newUser;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
+  async getUsersByRole(role: string): Promise<User[]> {
+    return await db.select().from(users).where(sql`${users.role}::text = ${role}`);
+  }
+
+  // Ticket methods
+  async createTicket(ticket: InsertTicket): Promise<Ticket> {
+    const [newTicket] = await db.insert(tickets).values(ticket).returning();
+    return newTicket;
+  }
+
+  async getTicket(id: number): Promise<Ticket | undefined> {
+    const [ticket] = await db.select().from(tickets).where(eq(tickets.id, id));
+    return ticket || undefined;
+  }
+
+  async getTicketWithRelations(id: number): Promise<TicketWithRelations | undefined> {
+    const [ticket] = await db.select().from(tickets).where(eq(tickets.id, id));
+    if (!ticket) return undefined;
+
+    const [createdBy] = await db.select().from(users).where(eq(users.id, ticket.createdById));
+    if (!createdBy) return undefined;
+
+    let assignedTo = undefined;
+    if (ticket.assignedToId) {
+      const [assignee] = await db.select().from(users).where(eq(users.id, ticket.assignedToId));
+      assignedTo = assignee;
+    }
+
+    const ticketComments = await this.getCommentsByTicket(id);
+
+    return {
+      ...ticket,
+      createdBy,
+      assignedTo,
+      comments: ticketComments,
+    };
+  }
+
+  async updateTicket(id: number, data: Partial<Ticket>): Promise<Ticket | undefined> {
+    const [updatedTicket] = await db.update(tickets)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(tickets.id, id))
+      .returning();
+    return updatedTicket || undefined;
+  }
+
+  async getAllTickets(): Promise<Ticket[]> {
+    return await db.select().from(tickets);
+  }
+
+  async getTicketsByStatus(status: string): Promise<Ticket[]> {
+    return await db.select().from(tickets).where(sql`${tickets.status}::text = ${status}`);
+  }
+
+  async getTicketsByPriority(priority: string): Promise<Ticket[]> {
+    return await db.select().from(tickets).where(sql`${tickets.priority}::text = ${priority}`);
+  }
+
+  async getTicketsByAssignee(assigneeId: number): Promise<Ticket[]> {
+    return await db.select().from(tickets).where(eq(tickets.assignedToId, assigneeId));
+  }
+
+  async getTicketsByCreator(creatorId: number): Promise<Ticket[]> {
+    return await db.select().from(tickets).where(eq(tickets.createdById, creatorId));
+  }
+
+  async getTicketsWithPagination(page: number, limit: number): Promise<{ tickets: Ticket[], total: number }> {
+    const offset = (page - 1) * limit;
+    
+    // Retrieve paginated tickets
+    const ticketList = await db.select()
+      .from(tickets)
+      .orderBy(desc(tickets.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    // Count total tickets
+    const totalResult = await db.select({ 
+      count: sql`count(*)` 
+    }).from(tickets);
+    const total = totalResult[0] ? Number(totalResult[0].count) : 0;
+
+    return { 
+      tickets: ticketList,
+      total
+    };
+  }
+
+  async searchTickets(query: string): Promise<Ticket[]> {
+    const searchPattern = `%${query}%`;
+    return await db.select()
+      .from(tickets)
+      .where(
+        like(tickets.subject, searchPattern) ||
+        like(tickets.description, searchPattern) ||
+        like(tickets.category, searchPattern)
+      );
+  }
+
+  // Comment methods
+  async createComment(comment: InsertComment): Promise<Comment> {
+    const [newComment] = await db.insert(comments).values(comment).returning();
+    return newComment;
+  }
+
+  async getCommentsByTicket(ticketId: number): Promise<Comment[]> {
+    return await db.select()
+      .from(comments)
+      .where(eq(comments.ticketId, ticketId))
+      .orderBy(comments.createdAt);
+  }
+
+  // Activity methods
+  async createActivity(activity: InsertActivity): Promise<Activity> {
+    const [newActivity] = await db.insert(activities).values(activity).returning();
+    return newActivity;
+  }
+
+  async getActivitiesByTicket(ticketId: number): Promise<Activity[]> {
+    return await db.select()
+      .from(activities)
+      .where(eq(activities.ticketId, ticketId))
+      .orderBy(desc(activities.createdAt));
+  }
+
+  async getRecentActivities(limit: number): Promise<Activity[]> {
+    return await db.select()
+      .from(activities)
+      .orderBy(desc(activities.createdAt))
+      .limit(limit);
+  }
+
+  // Statistics
+  async getTicketStats(): Promise<{
+    total: number;
+    openCount: number;
+    inProgressCount: number;
+    resolvedCount: number;
+    closedCount: number;
+    highPriorityCount: number;
+    resolvedToday: number;
+  }> {
+    // Get total count
+    const [totalResult] = await db.select({
+      count: sql`count(*)`
+    }).from(tickets);
+    
+    // Get open tickets count
+    const [openResult] = await db.select({
+      count: sql`count(*)`
+    }).from(tickets).where(sql`${tickets.status}::text = 'open'`);
+    
+    // Get in-progress tickets count
+    const [inProgressResult] = await db.select({
+      count: sql`count(*)`
+    }).from(tickets).where(sql`${tickets.status}::text = 'in_progress'`);
+    
+    // Get resolved tickets count
+    const [resolvedResult] = await db.select({
+      count: sql`count(*)`
+    }).from(tickets).where(sql`${tickets.status}::text = 'resolved'`);
+    
+    // Get closed tickets count
+    const [closedResult] = await db.select({
+      count: sql`count(*)`
+    }).from(tickets).where(sql`${tickets.status}::text = 'closed'`);
+    
+    // Get high priority tickets count
+    const [highPriorityResult] = await db.select({
+      count: sql`count(*)`
+    }).from(tickets).where(sql`${tickets.priority}::text = 'high'`);
+
+    // Get today's date (00:00:00)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Count resolved tickets from today
+    const [resolvedTodayResult] = await db.select({
+      count: sql`count(*)`
+    })
+    .from(tickets)
+    .where(
+      and(
+        sql`${tickets.status}::text = 'resolved'`,
+        gte(tickets.updatedAt, today)
+      )
+    );
+
+    return {
+      total: Number(totalResult.count) || 0,
+      openCount: Number(openResult.count) || 0,
+      inProgressCount: Number(inProgressResult.count) || 0,
+      resolvedCount: Number(resolvedResult.count) || 0,
+      closedCount: Number(closedResult.count) || 0,
+      highPriorityCount: Number(highPriorityResult.count) || 0,
+      resolvedToday: Number(resolvedTodayResult.count) || 0
+    };
+  }
+}
+
+// Use Database Storage implementation
+export const storage = new DatabaseStorage();

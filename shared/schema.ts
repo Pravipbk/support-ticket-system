@@ -1,4 +1,5 @@
 import { pgTable, text, serial, integer, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -51,6 +52,51 @@ export const activities = pgTable("activities", {
   message: text("message").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  createdTickets: many(tickets, { relationName: "createdTickets" }),
+  assignedTickets: many(tickets, { relationName: "assignedTickets" }),
+  comments: many(comments),
+  activities: many(activities)
+}));
+
+export const ticketsRelations = relations(tickets, ({ one, many }) => ({
+  createdBy: one(users, {
+    fields: [tickets.createdById],
+    references: [users.id],
+    relationName: "createdTickets"
+  }),
+  assignedTo: one(users, { 
+    fields: [tickets.assignedToId],
+    references: [users.id],
+    relationName: "assignedTickets"
+  }),
+  comments: many(comments),
+  activities: many(activities)
+}));
+
+export const commentsRelations = relations(comments, ({ one }) => ({
+  ticket: one(tickets, {
+    fields: [comments.ticketId],
+    references: [tickets.id]
+  }),
+  user: one(users, {
+    fields: [comments.userId],
+    references: [users.id]
+  })
+}));
+
+export const activitiesRelations = relations(activities, ({ one }) => ({
+  ticket: one(tickets, {
+    fields: [activities.ticketId],
+    references: [tickets.id]
+  }),
+  user: one(users, {
+    fields: [activities.userId],
+    references: [users.id]
+  })
+}));
 
 // Insert schemas and types
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
