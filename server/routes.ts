@@ -261,6 +261,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/tickets/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
+    
+    // Check if id is valid (is a number and not NaN)
+    if (isNaN(id)) {
+      return res.status(400).json({ message: "Invalid ticket ID" });
+    }
+    
     const ticket = await storage.getTicketWithRelations(id);
     
     if (!ticket) {
@@ -272,6 +278,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/tickets/:id", isAuthenticated, async (req, res) => {
     const id = parseInt(req.params.id);
+    
+    // Check if id is valid (is a number and not NaN)
+    if (isNaN(id)) {
+      return res.status(400).json({ message: "Invalid ticket ID" });
+    }
+    
     const ticket = await storage.getTicket(id);
     
     if (!ticket) {
@@ -343,6 +355,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Comment routes
   app.post("/api/tickets/:id/comments", isAuthenticated, async (req, res) => {
     const ticketId = parseInt(req.params.id);
+    
+    // Check if id is valid (is a number and not NaN)
+    if (isNaN(ticketId)) {
+      return res.status(400).json({ message: "Invalid ticket ID" });
+    }
+    
     const ticket = await storage.getTicket(ticketId);
     
     if (!ticket) {
@@ -378,6 +396,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/tickets/:id/comments", isAuthenticated, async (req, res) => {
     const ticketId = parseInt(req.params.id);
+    
+    // Check if id is valid (is a number and not NaN)
+    if (isNaN(ticketId)) {
+      return res.status(400).json({ message: "Invalid ticket ID" });
+    }
+    
     const ticket = await storage.getTicket(ticketId);
     
     if (!ticket) {
@@ -421,6 +445,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/tickets/:id/activities", isAuthenticated, async (req, res) => {
     const ticketId = parseInt(req.params.id);
+    
+    // Check if id is valid (is a number and not NaN)
+    if (isNaN(ticketId)) {
+      return res.status(400).json({ message: "Invalid ticket ID" });
+    }
+    
     const ticket = await storage.getTicket(ticketId);
     
     if (!ticket) {
